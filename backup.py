@@ -108,8 +108,15 @@ def build_rsync_command(source, target, latest_backup, compress, dry_run):
     """Build rsync command with appropriate options."""
     cmd = ["rsync"]
     
-    # Archive mode, verbose, one filesystem, delete excluded files in destination
-    cmd.extend(["-av", "--one-file-system", "--delete-excluded"])
+    # Archive mode but without permissions, group, owner (-rlptDv)
+    # -r: recursive
+    # -l: links
+    # -p: preserve permissions (we keep this for basic perms but not ownership)
+    # -t: preserve times
+    # -D: preserve device files (superuser only)
+    # -v: verbose
+    # We explicitly avoid -o (owner) and -g (group)
+    cmd.extend(["-rlptDv", "--one-file-system", "--delete-excluded"])
     
     # Hardlink with previous backup if available
     if latest_backup:
