@@ -137,10 +137,11 @@ class EmbyToJellyfinMigrator:
                 params={'Recursive': 'true', 'IncludeItemTypes': 'Movie,Episode'}
             )
 
-            # Get favourite items
+            # Get favourite items using the correct endpoint with Favorite=true filter
+            # Reference: https://github.com/jonjonsson/Emby-MDBList-Collection-Creator
             favourite_items = self._get_emby(
-                f'/Users/{user_id}/Items/Favorites',
-                params={'Recursive': 'true'}
+                f'/Users/{user_id}/Items',
+                params={'Recursive': 'true', 'Filters': 'IsFavorite'}
             )
 
             # Get played items (watched)
