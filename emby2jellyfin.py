@@ -164,6 +164,16 @@ class EmbyToJellyfinMigrator:
             schedules = self._get_emby(f'/LiveTv/Recordings/Schedule')
             logger.info(f"Found {len(schedules)} recording schedules")
             return schedules
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 500:
+                logger.warning(
+                    "Emby server returned 500 for recording schedules. "
+                    "This usually means Live TV is not configured or there's a server issue. "
+                    "Skipping recording schedule migration."
+                )
+            else:
+                logger.error(f"Failed to get recording schedules: {e}")
+            return []
         except Exception as e:
             logger.error(f"Failed to get recording schedules: {e}")
             return []

@@ -1,65 +1,27 @@
-```gitignore
+```
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Logs
-*.log
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Dependencies
-.venv/
+.Python
+env/
 venv/
-node_modules/
-
-# Build artifacts
-dist/
-build/
-*.egg-info/
-
-# Editors
-.vscode/
-.idea/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Testing
+.venv/
+.ENV
+.ENV.*
+.env
+.env.*
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
 .coverage
-htmlcov/
 .coverage.*
-.cache/
-.pytest_cache/
-.mypy_cache/
-
-# Compression
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/modules/
+.DS_Store
 ```
