@@ -12,11 +12,33 @@ Requirements:
     pip install requests
 
 Usage:
+    # Migrate specific user by username (auto-matches to Jellyfin user by name):
     python emby2jellyfin.py --emby-url http://emby-server:8096 \
                             --emby-api-key YOUR_EMBY_API_KEY \
                             --jellyfin-url http://jellyfin-server:8096 \
                             --jellyfin-api-key YOUR_JELLYFIN_API_KEY \
-                            [--user-id USER_ID] [--dry-run]
+                            --user-id Roo
+    
+    # Migrate specific user with explicit Jellyfin user mapping:
+    python emby2jellyfin.py --emby-url http://emby-server:8096 \
+                            --emby-api-key YOUR_EMBY_API_KEY \
+                            --jellyfin-url http://jellyfin-server:8096 \
+                            --jellyfin-api-key YOUR_JELLYFIN_API_KEY \
+                            --user-id Roo --jellyfin-user-id John
+    
+    # Migrate all users (auto-matches by username):
+    python emby2jellyfin.py --emby-url http://emby-server:8096 \
+                            --emby-api-key YOUR_EMBY_API_KEY \
+                            --jellyfin-url http://jellyfin-server:8096 \
+                            --jellyfin-api-key YOUR_JELLYFIN_API_KEY \
+                            --auto-match-users
+    
+    # Dry run (show what would be done):
+    python emby2jellyfin.py --emby-url http://emby-server:8096 \
+                            --emby-api-key YOUR_EMBY_API_KEY \
+                            --jellyfin-url http://jellyfin-server:8096 \
+                            --jellyfin-api-key YOUR_JELLYFIN_API_KEY \
+                            --user-id Roo --dry-run
 """
 
 import argparse
@@ -244,6 +266,34 @@ class EmbyToJellyfinMigrator:
             logger.error(f"Jellyfin API GET error on {endpoint}: {e}")
             raise
 
+    def get_jellyfin_users(self) -> list[dict]:
+        """Get all users from Jellyfin."""
+        try:
+            users = self._get_jellyfin('/Users')
+            logger.info(f"Found {len(users)} users in Jellyfin")
+            return users
+        except Exception as e:
+            logger.error(f"Failed to get Jellyfin users: {e}")
+            return []
+
+    def find_jellyfin_user_by_name(self, emby_username: str) -> Optional[str]:
+        """
+        Find a Jellyfin user by name (case-insensitive match).
+        Returns the Jellyfin user ID if found, None otherwise.
+        """
+        jellyfin_users = self.get_jellyfin_users()
+        emby_name_lower = emby_username.lower()
+        
+        for user in jellyfin_users:
+            jellyfin_name = user.get('Name', '')
+            if jellyfin_name.lower() == emby_name_lower:
+                jellyfin_id = user.get('Id')
+                logger.info(f"Matched Emby user '{emby_username}' to Jellyfin user '{jellyfin_name}' (ID: {jellyfin_id})")
+                return jellyfin_id
+        
+        logger.warning(f"No matching Jellyfin user found for Emby user '{emby_username}'")
+        return None
+
     def mark_as_watched(self, jellyfin_user_id: str, jellyfin_item_id: str) -> bool:
         """Mark an item as watched in Jellyfin."""
         try:
@@ -334,10 +384,14 @@ class EmbyToJellyfinMigrator:
     def migrate_user_data(
         self,
         emby_user_id: str,
-        jellyfin_user_id: str,
+        jellyfin_user_id: Optional[str] = None,
         emby_username: str = ""
     ) -> dict:
-        """Migrate all user data from Emby to Jellyfin for a specific user."""
+        """Migrate all user data from Emby to Jellyfin for a specific user.
+        
+        If jellyfin_user_id is not provided, attempts to find it by matching
+        the Emby username to a Jellyfin username (case-insensitive).
+        """
         
         stats = {
             'watched': 0,
@@ -347,8 +401,19 @@ class EmbyToJellyfinMigrator:
             'errors': 0
         }
 
+        # Auto-find Jellyfin user ID by username if not provided
+        if not jellyfin_user_id and emby_username:
+            jellyfin_user_id = self.find_jellyfin_user_by_name(emby_username)
+            if not jellyfin_user_id:
+                logger.error(f"Cannot migrate data for {emby_username}: No matching Jellyfin user found")
+                return stats
+        
+        if not jellyfin_user_id:
+            logger.error("Jellyfin user ID is required but not provided")
+            return stats
+
         user_label = f"User {emby_username} ({emby_user_id})" if emby_username else f"User {emby_user_id}"
-        logger.info(f"Starting migration for {user_label}")
+        logger.info(f"Starting migration for {user_label} to Jellyfin user {jellyfin_user_id}")
 
         # Get user data from Emby
         user_data = self.get_user_data(emby_user_id)
@@ -454,16 +519,15 @@ class EmbyToJellyfinMigrator:
             username = user.get('Name', '')
             logger.info(f"\nProcessing user: {username}")
             
-            # You would need to get the corresponding Jellyfin user ID here
-            # For now, this is a placeholder - implement user mapping as needed
-            jellyfin_user_id = input(
-                f"Enter Jellyfin user ID for '{username}' (or press Enter to skip): "
-            ).strip()
+            # Auto-find Jellyfin user by name (case-insensitive)
+            jellyfin_user_id = self.find_jellyfin_user_by_name(username)
             
             if jellyfin_user_id:
                 stats = self.migrate_user_data(user_id, jellyfin_user_id, username)
                 for key in total_stats:
                     total_stats[key] += stats[key]
+            else:
+                logger.warning(f"Skipping user '{username}': No matching Jellyfin user found")
 
         return total_stats
 
@@ -497,11 +561,16 @@ def main():
     )
     parser.add_argument(
         '--user-id',
-        help='Specific Emby user ID to migrate (optional, migrates all users if not specified)'
+        help='Specific Emby user ID or username to migrate (optional, migrates all users if not specified)'
     )
     parser.add_argument(
         '--jellyfin-user-id',
-        help='Corresponding Jellyfin user ID (required if --user-id is specified)'
+        help='Corresponding Jellyfin user ID or username (optional if username matching is desired)'
+    )
+    parser.add_argument(
+        '--auto-match-users',
+        action='store_true',
+        help='Automatically match Emby users to Jellyfin users by name (case-insensitive)'
     )
     parser.add_argument(
         '--dry-run',
@@ -519,8 +588,9 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    if args.user_id and not args.jellyfin_user_id:
-        parser.error("--jellyfin-user-id is required when --user-id is specified")
+    if args.user_id and not args.jellyfin_user_id and not args.auto_match_users:
+        logger.warning("--jellyfin-user-id not specified. Will attempt to auto-match by username.")
+        args.auto_match_users = True
 
     migrator = EmbyToJellyfinMigrator(
         emby_url=args.emby_url,
@@ -532,7 +602,42 @@ def main():
 
     try:
         if args.user_id:
-            stats = migrator.migrate_user_data(args.user_id, args.jellyfin_user_id)
+            # Check if user_id is actually a username (not a UUID)
+            emby_users = migrator.get_users()
+            emby_user_id = None
+            emby_username = None
+            
+            # Try to find the user by ID or name
+            for user in emby_users:
+                if user.get('Id') == args.user_id or user.get('Name', '').lower() == args.user_id.lower():
+                    emby_user_id = user.get('Id')
+                    emby_username = user.get('Name', '')
+                    break
+            
+            if not emby_user_id:
+                logger.error(f"Emby user '{args.user_id}' not found")
+                sys.exit(1)
+            
+            # Determine Jellyfin user ID
+            jellyfin_user_id = None
+            if args.jellyfin_user_id:
+                # Check if it's a username or ID
+                jellyfin_users = migrator.get_jellyfin_users()
+                for user in jellyfin_users:
+                    if user.get('Id') == args.jellyfin_user_id or user.get('Name', '').lower() == args.jellyfin_user_id.lower():
+                        jellyfin_user_id = user.get('Id')
+                        break
+                if not jellyfin_user_id:
+                    logger.error(f"Jellyfin user '{args.jellyfin_user_id}' not found")
+                    sys.exit(1)
+            elif args.auto_match_users:
+                # Auto-match by username
+                jellyfin_user_id = migrator.find_jellyfin_user_by_name(emby_username)
+                if not jellyfin_user_id:
+                    logger.error(f"No matching Jellyfin user found for '{emby_username}'")
+                    sys.exit(1)
+            
+            stats = migrator.migrate_user_data(emby_user_id, jellyfin_user_id, emby_username)
         else:
             stats = migrator.migrate_all_users()
 
